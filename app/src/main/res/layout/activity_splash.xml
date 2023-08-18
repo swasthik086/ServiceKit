@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="16dp"
+    android:background="#F0F0F0">
+
+    <androidx.cardview.widget.CardView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="8dp"
+        app:cardBackgroundColor="#CDD1CE"
+        android:layout_marginBottom="10dp">
+
+        <Button
+            android:id="@+id/SC1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="START SERIAL COMMUNICATION"
+            android:textColor="#FFFF"
+            android:background="#000"
+            android:padding="16dp" />
+    </androidx.cardview.widget.CardView>
+
+    <androidx.cardview.widget.CardView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="8dp"
+        app:cardBackgroundColor="#A5A3A3"
+        android:layout_marginTop="10dp">
+
+        <Button
+            android:id="@+id/SC2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SERIAL COMMUNICATION 2"
+            android:textColor="#FFFF"
+            android:padding="16dp"
+            android:background="#000"
+            android:visibility="gone"/>
+    </androidx.cardview.widget.CardView>
+
+    <androidx.cardview.widget.CardView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="8dp"
+        app:cardBackgroundColor="#CDD1CE"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="10dp">
+
+        <Button
+            android:id="@+id/startbutton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start Service"
+            android:textColor="#FFFF"
+            android:padding="16dp"
+            android:background="#000"
+            android:visibility="gone"/>
+    </androidx.cardview.widget.CardView>
+
+    <androidx.cardview.widget.CardView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="8dp"
+        app:cardBackgroundColor="#A5A3A3"
+        android:layout_marginTop="10dp">
+
+        <Button
+            android:id="@+id/stopbutton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Stop Service"
+            android:textColor="#FFFF"
+            android:padding="16dp"
+            android:background="#000"
+            android:visibility="gone"/>
+    </androidx.cardview.widget.CardView>
+
+</LinearLayout>

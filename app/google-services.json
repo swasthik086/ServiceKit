@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "994956159292",
+    "project_id": "servicekitv2",
+    "storage_bucket": "servicekitv2.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:994956159292:android:3ac327e64e81174d53d639",
+        "android_client_info": {
+          "package_name": "com.iq.usbterminal"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "994956159292-h74jc0nfvlhjhf2gg2i1m705tc474b03.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAL2d9-ykSPQh6xRLzLSDeGxAfAodEQ6TY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "994956159292-h74jc0nfvlhjhf2gg2i1m705tc474b03.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
