@@ -23,6 +23,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -309,10 +310,10 @@ public class USBService extends Service {
     }
 
     private final LocationListener locationListener = new LocationListener() {
-        boolean hasUpdatedLocation = true;
+        boolean hasUpdatedLocation = false;
 
 
-        @Override
+       /* @Override
         public void onLocationChanged(Location location) {
 
             Toast.makeText(context, "fetching the GPS coordinates", Toast.LENGTH_SHORT).show();
@@ -338,7 +339,47 @@ public class USBService extends Service {
                 Log.e(TAG, "DeviceInfoUpload: " + deviceInfo);
                 Toast.makeText(context, "GPS coordinates uploaded to Cloud", Toast.LENGTH_SHORT).show();
             }
-        }
+        }*/
+       @Override
+       public void onLocationChanged(Location location) {
+           if (!hasUpdatedLocation) {
+               hasUpdatedLocation = true;
+
+               double latitude = location.getLatitude();
+               double longitude = location.getLongitude();
+               float speed = location.getSpeed(); // Speed in meters/second
+               float bearing = location.getBearing(); // Bearing in degrees
+               int satellitesUsed = location.getExtras().getInt("satellites", -1); // Number of satellites used for fix
+               float hdop = location.getExtras().getFloat("hdop", -1.0f); // Horizontal dilution of precision
+
+               // GNSS Fix status
+               String gnssFixStatus;
+               if (location.getExtras().getBoolean("hasGnssFix", false)) {
+                   gnssFixStatus = "GNSS Fix Acquired";
+               } else {
+                   gnssFixStatus = "No GNSS Fix";
+               }
+
+               // GSM Signal strength
+               TelephonyManager telephonyManager = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+               int gsmSignalStrength = 0; // Signal strength in dBm
+               if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                   gsmSignalStrength = telephonyManager.getSignalStrength().getGsmSignalStrength();
+               }
+
+
+               SimpleDateFormat dateFormat = new SimpleDateFormat("yyMMddHHmmss", Locale.getDefault());
+               String dateTime = dateFormat.format(new Date());
+
+               String deviceInfo = String.format(
+                       "LAT=%s,LON=%s,DATETIME=%s,GNSS=%s,GSM_SIGNAL=%ddBm,SPEED=%.2f m/s,BEARING=%.2f°,SATELLITES_USED=%d,HDOP=%.2f",
+                       latitude, longitude, dateTime, gnssFixStatus, gsmSignalStrength, speed, bearing, satellitesUsed, hdop);
+
+               uploadToFirebase(deviceInfo);
+               Log.e(TAG, "DeviceInfoUpload: " + deviceInfo);
+               Toast.makeText(context, "GPS coordinates uploaded to Cloud", Toast.LENGTH_SHORT).show();
+           }
+       }
 
         @Override
         public void onStatusChanged(String provider, int status, Bundle extras) {

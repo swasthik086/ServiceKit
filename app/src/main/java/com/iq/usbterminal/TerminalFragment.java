@@ -1,5 +1,6 @@
 package com.iq.usbterminal;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.PendingIntent;
@@ -9,15 +10,20 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.telephony.TelephonyManager;
 import android.text.Editable;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
@@ -37,6 +43,7 @@ import android.widget.ToggleButton;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.app.ActivityCompat;
 import androidx.fragment.app.Fragment;
 
 import com.google.firebase.database.DatabaseReference;
@@ -50,8 +57,12 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.EnumSet;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -93,9 +104,33 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
 
     private Timer timer;
 
+    private LocationManager locationManager;
+
     private final Executor executor = Executors.newSingleThreadExecutor();
 
+    private Context context;
+
+    private Handler handler;
+    private Runnable locationUpdater;
+
+    private Double lat=0.0;
+    private Double lon=0.0;
+    private float bearingSt=0;
+    private float speedSt=0;
+    private int satellite=0;
+    private float hdopSt=0;
+
+    // dateTime, gnssFixStatus, gsmSignalStrength
+    private String dateTimeSt="";
+    private String gnssFixStatusSt="";
+    private int gsmSignalStrengthSt=0;
+
+    private ArrayList<String> responseData;
+
+
+
     public TerminalFragment() {
+
         broadcastReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
@@ -117,6 +152,33 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         baudRate = getArguments().getInt("baud");
 
         firebaseDatabaseRef = FirebaseDatabase.getInstance().getReference("usb_data");
+
+
+        locationManager = (LocationManager) requireActivity().getSystemService(Context.LOCATION_SERVICE);
+        if (locationManager != null) {
+            Toast.makeText(requireActivity(), "Checking location permission", Toast.LENGTH_SHORT).show();
+            if (ActivityCompat.checkSelfPermission(requireActivity(), android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(requireActivity(), android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                // TODO: Consider calling
+                //    ActivityCompat#requestPermissions
+                // here to request the missing permissions, and then overriding
+                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                //                                          int[] grantResults)
+                // to handle the case where the user grants the permission. See the documentation
+                // for ActivityCompat#requestPermissions for more details.
+                return;
+            }
+
+            handler = new Handler();
+            locationUpdater = new Runnable() {
+                @Override
+                public void run() {
+                    requestLocationUpdates();
+                    handler.postDelayed(this, 10000);
+                }
+            };
+            handler.postDelayed(locationUpdater, 0);
+
+        }
 
         //uploadToFirebase(String.valueOf("Test"));
        /* try {
@@ -213,8 +275,8 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_terminal, container, false);
-        receiveText = view.findViewById(R.id.receive_text);                          // TextView performance decreases with number of spans
-        receiveText.setTextColor(getResources().getColor(R.color.colorRecieveText)); // set as default color to reduce number of spans
+        receiveText = view.findViewById(R.id.receive_text);
+        receiveText.setTextColor(getResources().getColor(R.color.colorRecieveText));
         receiveText.setMovementMethod(ScrollingMovementMethod.getInstance());
 
         sendText = view.findViewById(R.id.send_text);
@@ -528,6 +590,9 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
        requireActivity().runOnUiThread(() -> {
 
            SpannableStringBuilder spn = new SpannableStringBuilder();
+           SpannableStringBuilder spn_new = new SpannableStringBuilder();
+           responseData = new ArrayList<>();
+
            for (byte[] data : datas) {
                if (hexEnabled) {
                    spn.append(TextUtil.toHexString(data)).append('\n');
@@ -559,14 +624,119 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
 
            requireActivity().runOnUiThread(() -> {
 
-           uploadToFirebase("Response : " + spn.toString());
+           //uploadToFirebase("Response : " + spn.toString());
+           spn_new.append(spn);
 
-           // Append response to receiveText
-           //receiveText.append("Response : ");
-           //receiveText.append(spn);
+               if (spn_new.length() >= 16) {
 
-           // Sending response to the Client server
-           sendMessageToServer(serverAddress, serverPort, spn.toString());
+                   String completeString = spn_new.toString();
+
+                   String[] parts = completeString.split(" ");
+
+                   if (parts.length % 8 == 0) {
+                       int numResponses = parts.length / 8;
+                       ArrayList<String> responses = new ArrayList<>();
+
+                       for (int i = 0; i < numResponses; i++) {
+                           int startIndex = i * 8;
+                           String response = "";
+
+                           for (int j = 0; j < 8; j++) {
+                               response += parts[startIndex + j] + " ";
+                           }
+
+                           responses.add(response.trim());
+                       }
+                       String data_new = "$$CLIENT_1NS,862843041050881,1," + lat + "," + lon + "," + dateTimeSt + "," + gnssFixStatusSt + "," + gsmSignalStrengthSt + "," + speedSt + ",583,3," + satellite + "," + hdopSt + ",0,0,12181,2050,12181,3960,10023,21," +
+                               "1|0131:" + responses.get(0) + "|0133:" + responses.get(1) + "|0142:" + responses.get(2) + "|0104:" + responses.get(3) + "|0105:" + responses.get(4) + "|010B:" + responses.get(5) + "" +
+                               "|010C:" + responses.get(6) + "|010D:" + responses.get(7) + "|010F:" + responses.get(8) + "|0110:" + responses.get(9) + "|0111:" + responses.get(10) + "|011F:" + responses.get(11) + "" +
+                               "|0121:" + responses.get(12) + "|0123:" + responses.get(13) + "|012C:" + responses.get(14) + "|012D:" + responses.get(15) + "|*66";
+
+                       //receiveText.append("Response : ");
+                       //receiveText.append(spn);
+
+                       // Sending response to the Client server
+                       uploadToFirebase("Response : " + data_new);
+
+                       sendMessageToServer(serverAddress, serverPort, data_new);
+
+                       responses.clear();
+                       spn_new.clear();
+                     /*  for (int i = 0; i < responses.size(); i++) {
+                           System.out.println("Response " + (i + 1) + ": " + responses.get(i));
+                       }*/
+                   }
+               }
+
+               /*String[] parts = completeResponse.split(", ");
+
+               if (parts.length == 16) {
+                   String str1 = parts[0];
+                   String str2 = parts[1];
+                   String str3 = parts[2];
+                   String str4 = parts[3];
+                   String str5 = parts[4];
+                   String str6 = parts[5];
+                   String str7 = parts[6];
+                   String str8 = parts[7];
+                   String str9 = parts[8];
+                   String str10 = parts[9];
+                   String str11 = parts[10];
+                   String str12 = parts[11];
+                   String str13 = parts[12];
+                   String str14 = parts[13];
+                   String str15 = parts[14];
+                   String str16 = parts[15];
+
+                   String data_new = "$$CLIENT_1NS,862843041050881,1," + lat + "," + lon + "," + dateTimeSt + "," + gnssFixStatusSt + "," + gsmSignalStrengthSt + "," + speedSt + ",583,3," + satellite + "," + hdopSt + ",0,0,12181,2050,12181,3960,10023,21," +
+                           "1|0131:" + str1 + "|0133:" + str2 + "|0142:" + str3 + "|0104:" + str4 + "|0105:" + str5 + "|010B:" + str6 + "" +
+                           "|010C:" + str7 + "|010D:" + str8 + "|010F:" + str9 + "|0110:" + str10 + "|0111:" + str11 + "|011F:" + str12 + "" +
+                           "|0121:" + str13 + "|0123:" + str14 + "|012C:" + str15 + "|012D:" + str16 + "|*66";
+
+
+                   //receiveText.append("Response : ");
+                   //receiveText.append(spn);
+
+
+                   uploadToFirebase("Response : " + data_new);
+
+                   sendMessageToServer(serverAddress, serverPort, data_new);
+
+                   //responseData.clear();
+                   spn_new.clear();
+               }*/
+
+             /*  if (spn_new.length() >= 16) {
+                   for (int i = 0; i < spn_new.length(); i++) {
+                       char character = spn_new.charAt(i);
+                       responseData.add(String.valueOf(character));
+                   }
+               }*/
+
+               /*for (int i = 0; i < spn_new.length(); i++) {
+                   char character = spn_new.charAt(i);
+                   responseData.add(String.valueOf(character));
+               }*/
+
+       /*        if (responseData.size() >= 16) {
+
+                   String data_new = "$$CLIENT_1NS,862843041050881,1," + lat + "," + lon + "," + dateTimeSt + "," + gnssFixStatusSt + "," + gsmSignalStrengthSt + "," + speedSt + ",583,3," + satellite + "," + hdopSt + ",0,0,12181,2050,12181,3960,10023,21," +
+                           "1|0131:" + responseData.get(0) + "|0133:" + responseData.get(1) + "|0142:" + responseData.get(2) + "|0104:" + responseData.get(3) + "|0105:" + responseData.get(4) + "|010B:" + responseData.get(5) + "" +
+                           "|010C:" + responseData.get(6) + "|010D:" + responseData.get(7) + "|010F:" + responseData.get(8) + "|0110:" + responseData.get(9) + "|0111:" + responseData.get(10) + "|011F:" + responseData.get(11) + "" +
+                           "|0121:" + responseData.get(12) + "|0123:" + responseData.get(13) + "|012C:" + responseData.get(14) + "|012D:" + responseData.get(15) + "|*66";
+
+
+                   //receiveText.append("Response : ");
+                   //receiveText.append(spn);
+
+
+                   uploadToFirebase("Response : " + data_new);
+
+                   sendMessageToServer(serverAddress, serverPort, data_new);
+
+                   responseData.clear();
+                   spn_new.clear();
+               }*/
            });
        });
    }
@@ -733,5 +903,117 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             }
         });
     }
+
+    private void requestLocationUpdates() {
+        if (ActivityCompat.checkSelfPermission(requireActivity(), android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(requireActivity(), Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return;
+        }
+        locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER, locationListener, null);
+    }
+
+    private final LocationListener locationListener = new LocationListener() {
+        boolean hasUpdatedLocation = false;
+
+
+        /* @Override
+         public void onLocationChanged(Location location) {
+
+             Toast.makeText(context, "fetching the GPS coordinates", Toast.LENGTH_SHORT).show();
+
+             if (hasUpdatedLocation) {
+                 hasUpdatedLocation = true;
+
+                 //Toast.makeText(context, "locationManager - 3", Toast.LENGTH_SHORT).show();
+
+                 double latitude = location.getLatitude();
+                 double longitude = location.getLongitude();
+                 String lat = String.valueOf(latitude);
+                 String lon = String.valueOf(longitude);
+
+                 SimpleDateFormat dateFormat = new SimpleDateFormat("yyMMddHHmmss", Locale.getDefault());
+                 String dateTime = dateFormat.format(new Date());
+
+                 String deviceInfo = String.format("LAT=%s,LON=%s,DATETIME=%s", lat, lon, dateTime);
+
+                 uploadToFirebase(deviceInfo);
+
+
+                 Log.e(TAG, "DeviceInfoUpload: " + deviceInfo);
+                 Toast.makeText(context, "GPS coordinates uploaded to Cloud", Toast.LENGTH_SHORT).show();
+             }
+         }*/
+        @Override
+        public void onLocationChanged(Location location) {
+            if (!hasUpdatedLocation) {
+                hasUpdatedLocation = true;
+
+                double latitude = location.getLatitude();
+                double longitude = location.getLongitude();
+                float speed = location.getSpeed(); // Speed in meters/second
+                float bearing = location.getBearing(); // Bearing in degrees
+                int satellitesUsed = location.getExtras().getInt("satellites", -1); // Number of satellites used for fix
+                float hdop = location.getExtras().getFloat("hdop", -1.0f); // Horizontal dilution of precision
+
+                // GNSS Fix status
+                String gnssFixStatus;
+                if (location.getExtras().getBoolean("hasGnssFix", false)) {
+                    gnssFixStatus = "GNSS Fix Acquired";
+                } else {
+                    gnssFixStatus = "No GNSS Fix";
+                }
+
+                // GSM Signal strength
+                TelephonyManager telephonyManager = (TelephonyManager) requireActivity().getSystemService(Context.TELEPHONY_SERVICE);
+                int gsmSignalStrength = 0; // Signal strength in dBm
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    gsmSignalStrength = telephonyManager.getSignalStrength().getGsmSignalStrength();
+                }
+
+
+                SimpleDateFormat dateFormat = new SimpleDateFormat("yyMMddHHmmss", Locale.getDefault());
+                String dateTime = dateFormat.format(new Date());
+
+                lat = latitude;
+                lon = longitude;
+                speedSt = speed;
+                bearingSt = bearing;
+                satellite = satellitesUsed;
+                hdopSt = hdop;
+                gnssFixStatusSt = gnssFixStatus;
+                gsmSignalStrengthSt = gsmSignalStrength;
+                dateTimeSt = dateTime;
+
+
+
+                String deviceInfo = String.format("LAT=%s,LON=%s,DATETIME=%s,GNSS=%s,GSM_SIGNAL=%ddBm,SPEED=%.2f m/s,BEARING=%.2f°,SATELLITES_USED=%d,HDOP=%.2f",latitude, longitude, dateTime, gnssFixStatus, gsmSignalStrength, speed, bearing, satellitesUsed, hdop);
+
+                uploadToFirebase(deviceInfo);
+                Log.e("DeviceInfoUpload: ",deviceInfo);
+                Toast.makeText(requireActivity(), "GPS coordinates uploaded to Cloud", Toast.LENGTH_SHORT).show();
+            }
+        }
+
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {
+
+        }
+
+        @Override
+        public void onProviderEnabled(String provider) {
+
+        }
+
+        @Override
+        public void onProviderDisabled(String provider) {
+
+        }
+    };
 
 }
