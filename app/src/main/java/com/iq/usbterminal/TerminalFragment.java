@@ -68,6 +68,8 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 public class TerminalFragment extends Fragment implements ServiceConnection, SerialListener {
@@ -124,8 +126,9 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     private String dateTimeSt="";
     private String gnssFixStatusSt="";
     private int gsmSignalStrengthSt=0;
+    private SpannableStringBuilder spn_new;
+    private int count =0;
 
-    private ArrayList<String> responseData;
 
 
 
@@ -150,6 +153,8 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         deviceId = getArguments().getInt("device");
         portNum = getArguments().getInt("port");
         baudRate = getArguments().getInt("baud");
+
+        spn_new = new SpannableStringBuilder();
 
         firebaseDatabaseRef = FirebaseDatabase.getInstance().getReference("usb_data");
 
@@ -461,10 +466,10 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                 data = (str + newline).getBytes();
             }
             requireActivity().runOnUiThread(() -> {
-            SpannableStringBuilder spn = new SpannableStringBuilder(msg + '\n');
-            spn.setSpan(new ForegroundColorSpan(getResources().getColor(R.color.colorSendText)), 0, spn.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-            //receiveText.append(spn);
-            //uploadToFirebase("Request : "+String.valueOf(spn));
+                SpannableStringBuilder spn = new SpannableStringBuilder(msg + '\n');
+                spn.setSpan(new ForegroundColorSpan(getResources().getColor(R.color.colorSendText)), 0, spn.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                //receiveText.append(spn);
+                //uploadToFirebase("Request : "+String.valueOf(spn));
             });
             service.write(data);
         } catch (SerialTimeoutException e) {
@@ -548,17 +553,58 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
        });
    }*/
 
-   /* private void receive(ArrayDeque<byte[]> datas) {
+    /* private void receive(ArrayDeque<byte[]> datas) {
+         requireActivity().runOnUiThread(() -> {
+
+             SpannableStringBuilder spn = new SpannableStringBuilder();
+             for (byte[] data : datas) {
+                 if (hexEnabled) {
+                     spn.append(TextUtil.toHexString(data)).append('\n');
+
+                 } else {
+                     String msg = new String(data);
+                     if (newline.equals(TextUtil.newline_crlf) && msg.length() > 0) {
+                         if (pendingNewline && msg.charAt(0) == '\n') {
+                             int charactersToDelete = 2;
+                             if (spn.length() >= charactersToDelete) {
+                                 spn.delete(spn.length() - charactersToDelete, spn.length());
+                             } else {
+                                 Editable edt = receiveText.getEditableText();
+                                 int edtLength = edt != null ? edt.length() : 0;
+                                 if (edtLength >= charactersToDelete) {
+                                     edt.delete(edtLength - charactersToDelete, edtLength);
+                                 }
+                             }
+                         }
+                         pendingNewline = msg.charAt(msg.length() - 1) == '\r';
+                     }
+                     spn.append(TextUtil.toCaretString(msg, newline.length() != 0));
+
+                 }
+             }
+
+             uploadToFirebase("Response : " + spn.toString());
+
+             receiveText.append("Response : ");
+             receiveText.append(spn);
+
+             sendMessageToServer(serverAddress, serverPort, spn.toString());
+         });
+     }*/
+    private void receive(ArrayDeque<byte[]> datas) {
         requireActivity().runOnUiThread(() -> {
 
             SpannableStringBuilder spn = new SpannableStringBuilder();
+
+
             for (byte[] data : datas) {
                 if (hexEnabled) {
                     spn.append(TextUtil.toHexString(data)).append('\n');
-
                 } else {
                     String msg = new String(data);
-                    if (newline.equals(TextUtil.newline_crlf) && msg.length() > 0) {
+                    int msgLength = msg.length();
+
+                    if (newline.equals(TextUtil.newline_crlf) && msgLength > 0) {
                         if (pendingNewline && msg.charAt(0) == '\n') {
                             int charactersToDelete = 2;
                             if (spn.length() >= charactersToDelete) {
@@ -571,176 +617,47 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                                 }
                             }
                         }
-                        pendingNewline = msg.charAt(msg.length() - 1) == '\r';
+                        pendingNewline = msg.charAt(msgLength - 1) == '\r';
                     }
-                    spn.append(TextUtil.toCaretString(msg, newline.length() != 0));
 
+                    if (!pendingNewline) {
+                        spn.append(TextUtil.toCaretString(msg, newline.length() != 0));
+                    }
                 }
             }
 
-            uploadToFirebase("Response : " + spn.toString());
 
-            receiveText.append("Response : ");
-            receiveText.append(spn);
 
-            sendMessageToServer(serverAddress, serverPort, spn.toString());
+
+            spn_new.append(spn);
+            count++;
+            Log.e("count", String.valueOf(count));
+            Log.e("Response_spn_logs", String.valueOf(spn_new));
+
+
+            if (spn_new.length() >= 16*24) {
+                Log.e("Response__data_length", String.valueOf(spn_new.length()));
+                String data_new = "$$CLIENT_1NS,862843041050881,1," + lat + "," + lon + "," + dateTimeSt + "," + gnssFixStatusSt + "," + gsmSignalStrengthSt + "," + speedSt + ",583,3," + satellite + "," + hdopSt + ",0,0,12181,2050,12181,3960,10023,21," +
+                        "1|0131:" + spn_new.subSequence(0, 24).toString() + "|0133:" + spn_new.subSequence(24, 48).toString() + "|0142:" + spn_new.subSequence(48, 72) + "|0104:" + spn_new.subSequence(72, 96) + "|0105:" + spn_new.subSequence(96, 120) + "|010B:" + spn_new.subSequence(120, 144) + "" +
+                        "|010C:" + spn_new.subSequence(144, 168) + "|010D:" + spn_new.subSequence(168, 192) + "|010F:" + spn_new.subSequence(192, 216) + "|0110:" + spn_new.subSequence(216, 240) + "|0111:" + spn_new.subSequence(240, 264) + "|011F:" + spn_new.subSequence(264, 288) + "" +
+                        "|0121:" + spn_new.subSequence(288, 312) + "|0123:" + spn_new.subSequence(312, 336) + "|012C:" + spn_new.subSequence(336, 360) + "|012D:" + spn_new.subSequence(360, 384) + "|*66";
+
+                //receiveText.append("Response : ");
+                receiveText.setText(data_new);
+
+                // Sending response to the Client server
+                uploadToFirebase("Response : " + data_new);
+
+                sendMessageToServer(serverAddress, serverPort, data_new);
+                Log.e("Response_data", String.valueOf(data_new));
+                //receiveText.setText(spn_new);
+
+                //responses.clear();
+                spn_new.clear();
+
+            }
         });
-    }*/
-   private void receive(ArrayDeque<byte[]> datas) {
-       requireActivity().runOnUiThread(() -> {
-
-           SpannableStringBuilder spn = new SpannableStringBuilder();
-           SpannableStringBuilder spn_new = new SpannableStringBuilder();
-           responseData = new ArrayList<>();
-
-           for (byte[] data : datas) {
-               if (hexEnabled) {
-                   spn.append(TextUtil.toHexString(data)).append('\n');
-               } else {
-                   String msg = new String(data);
-                   int msgLength = msg.length();
-
-                   if (newline.equals(TextUtil.newline_crlf) && msgLength > 0) {
-                       if (pendingNewline && msg.charAt(0) == '\n') {
-                           int charactersToDelete = 2;
-                           if (spn.length() >= charactersToDelete) {
-                               spn.delete(spn.length() - charactersToDelete, spn.length());
-                           } else {
-                               Editable edt = receiveText.getEditableText();
-                               int edtLength = edt != null ? edt.length() : 0;
-                               if (edtLength >= charactersToDelete) {
-                                   edt.delete(edtLength - charactersToDelete, edtLength);
-                               }
-                           }
-                       }
-                       pendingNewline = msg.charAt(msgLength - 1) == '\r';
-                   }
-
-                   if (!pendingNewline) {
-                       spn.append(TextUtil.toCaretString(msg, newline.length() != 0));
-                   }
-               }
-           }
-
-           requireActivity().runOnUiThread(() -> {
-
-           //uploadToFirebase("Response : " + spn.toString());
-           spn_new.append(spn);
-
-               if (spn_new.length() >= 16) {
-
-                   String completeString = spn_new.toString();
-
-                   String[] parts = completeString.split(" ");
-
-                   if (parts.length % 8 == 0) {
-                       int numResponses = parts.length / 8;
-                       ArrayList<String> responses = new ArrayList<>();
-
-                       for (int i = 0; i < numResponses; i++) {
-                           int startIndex = i * 8;
-                           String response = "";
-
-                           for (int j = 0; j < 8; j++) {
-                               response += parts[startIndex + j] + " ";
-                           }
-
-                           responses.add(response.trim());
-                       }
-                       String data_new = "$$CLIENT_1NS,862843041050881,1," + lat + "," + lon + "," + dateTimeSt + "," + gnssFixStatusSt + "," + gsmSignalStrengthSt + "," + speedSt + ",583,3," + satellite + "," + hdopSt + ",0,0,12181,2050,12181,3960,10023,21," +
-                               "1|0131:" + responses.get(0) + "|0133:" + responses.get(1) + "|0142:" + responses.get(2) + "|0104:" + responses.get(3) + "|0105:" + responses.get(4) + "|010B:" + responses.get(5) + "" +
-                               "|010C:" + responses.get(6) + "|010D:" + responses.get(7) + "|010F:" + responses.get(8) + "|0110:" + responses.get(9) + "|0111:" + responses.get(10) + "|011F:" + responses.get(11) + "" +
-                               "|0121:" + responses.get(12) + "|0123:" + responses.get(13) + "|012C:" + responses.get(14) + "|012D:" + responses.get(15) + "|*66";
-
-                       //receiveText.append("Response : ");
-                       //receiveText.append(spn);
-
-                       // Sending response to the Client server
-                       uploadToFirebase("Response : " + data_new);
-
-                       sendMessageToServer(serverAddress, serverPort, data_new);
-
-                       responses.clear();
-                       spn_new.clear();
-                     /*  for (int i = 0; i < responses.size(); i++) {
-                           System.out.println("Response " + (i + 1) + ": " + responses.get(i));
-                       }*/
-                   }
-               }
-
-               /*String[] parts = completeResponse.split(", ");
-
-               if (parts.length == 16) {
-                   String str1 = parts[0];
-                   String str2 = parts[1];
-                   String str3 = parts[2];
-                   String str4 = parts[3];
-                   String str5 = parts[4];
-                   String str6 = parts[5];
-                   String str7 = parts[6];
-                   String str8 = parts[7];
-                   String str9 = parts[8];
-                   String str10 = parts[9];
-                   String str11 = parts[10];
-                   String str12 = parts[11];
-                   String str13 = parts[12];
-                   String str14 = parts[13];
-                   String str15 = parts[14];
-                   String str16 = parts[15];
-
-                   String data_new = "$$CLIENT_1NS,862843041050881,1," + lat + "," + lon + "," + dateTimeSt + "," + gnssFixStatusSt + "," + gsmSignalStrengthSt + "," + speedSt + ",583,3," + satellite + "," + hdopSt + ",0,0,12181,2050,12181,3960,10023,21," +
-                           "1|0131:" + str1 + "|0133:" + str2 + "|0142:" + str3 + "|0104:" + str4 + "|0105:" + str5 + "|010B:" + str6 + "" +
-                           "|010C:" + str7 + "|010D:" + str8 + "|010F:" + str9 + "|0110:" + str10 + "|0111:" + str11 + "|011F:" + str12 + "" +
-                           "|0121:" + str13 + "|0123:" + str14 + "|012C:" + str15 + "|012D:" + str16 + "|*66";
-
-
-                   //receiveText.append("Response : ");
-                   //receiveText.append(spn);
-
-
-                   uploadToFirebase("Response : " + data_new);
-
-                   sendMessageToServer(serverAddress, serverPort, data_new);
-
-                   //responseData.clear();
-                   spn_new.clear();
-               }*/
-
-             /*  if (spn_new.length() >= 16) {
-                   for (int i = 0; i < spn_new.length(); i++) {
-                       char character = spn_new.charAt(i);
-                       responseData.add(String.valueOf(character));
-                   }
-               }*/
-
-               /*for (int i = 0; i < spn_new.length(); i++) {
-                   char character = spn_new.charAt(i);
-                   responseData.add(String.valueOf(character));
-               }*/
-
-       /*        if (responseData.size() >= 16) {
-
-                   String data_new = "$$CLIENT_1NS,862843041050881,1," + lat + "," + lon + "," + dateTimeSt + "," + gnssFixStatusSt + "," + gsmSignalStrengthSt + "," + speedSt + ",583,3," + satellite + "," + hdopSt + ",0,0,12181,2050,12181,3960,10023,21," +
-                           "1|0131:" + responseData.get(0) + "|0133:" + responseData.get(1) + "|0142:" + responseData.get(2) + "|0104:" + responseData.get(3) + "|0105:" + responseData.get(4) + "|010B:" + responseData.get(5) + "" +
-                           "|010C:" + responseData.get(6) + "|010D:" + responseData.get(7) + "|010F:" + responseData.get(8) + "|0110:" + responseData.get(9) + "|0111:" + responseData.get(10) + "|011F:" + responseData.get(11) + "" +
-                           "|0121:" + responseData.get(12) + "|0123:" + responseData.get(13) + "|012C:" + responseData.get(14) + "|012D:" + responseData.get(15) + "|*66";
-
-
-                   //receiveText.append("Response : ");
-                   //receiveText.append(spn);
-
-
-                   uploadToFirebase("Response : " + data_new);
-
-                   sendMessageToServer(serverAddress, serverPort, data_new);
-
-                   responseData.clear();
-                   spn_new.clear();
-               }*/
-           });
-       });
-   }
-
+    }
 
 
 
@@ -859,7 +776,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                 if (!controlLines.contains(UsbSerialPort.ControlLine.RI))   riBtn.setVisibility(View.INVISIBLE);
                 run();
             } catch (IOException e) {
-               // Toast.makeText(getActivity(), "getSupportedControlLines() failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                // Toast.makeText(getActivity(), "getSupportedControlLines() failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
             }
         }
 

@@ -13,7 +13,7 @@ android {
 
         applicationId "com.iq.usbterminal"
         versionCode 1
-        versionName "1.48"
+        versionName "1.50"
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
