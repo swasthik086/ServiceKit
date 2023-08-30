@@ -57,6 +57,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -128,8 +130,21 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     private int gsmSignalStrengthSt=0;
     private SpannableStringBuilder spn_new;
     private int count =0;
+    private String reqstr="";
 
+    private int first_service=0;
 
+    private String data_new="";
+
+    private boolean initializationDone = false;
+
+    private int request_index=0;
+
+    private int UDSresponse=0;
+
+    private String spn = "";
+
+    private int receive_complete=0;
 
 
     public TerminalFragment() {
@@ -420,32 +435,105 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             @Override
             public void run() {
                 try {
-                    sendParametersWithDelay();
+                    //sendParametersWithDelay();
+                    sendCommands();
                 } catch (Exception e) {
                     e.printStackTrace();
                     Log.e("PeriodicOperations", "Error in periodic operation: " + e.getMessage());
                 }
             }
-        }, 0, 10000); // 10 seconds in milliseconds
+        }, 10, 200); // 10 seconds in milliseconds
     }
 
+    private void sendCommands() {
+        if (!initializationDone) {
+            sendInitializationCommands();
+            initializationDone = true;
+        }
 
-    private void sendParametersWithDelay() {
+        sendIntervalCommands();
+    }
+
+    private void sendInitializationCommands() {
         String[] parameters = {
-                "31", "33", "42", "04", "05", "0B", "0C", "0D",
-                "0F", "10", "11", "1F", "21", "23", "2C", "2D"
+                "ATWS", "ATD", "ATZ", "ATE0", "ATS0", "ATAL", "ATTP5"
         };
 
         for (String parameter : parameters) {
             try {
-                String request = "02 01 " + parameter + " 00 00 00 00 00 ";
+                String request = parameter ;
                 send(request);
-                Thread.sleep(10); // Delay for 10 milliseconds
+                Thread.sleep(500); // Delay for 10 milliseconds
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }
     }
+
+    private void sendIntervalCommands() {
+        String request="";
+        String[] parameters = {
+                "33", "42", "04", "05", "0B", "0C", "0D",
+                "0F", "10", "21", "23", "2C","03"
+        };
+        try {
+            if(request_index>12) {
+                request_index = 0;
+            }
+            if(request_index >11)  {
+                request = parameters[request_index];
+            }
+            else {
+                request = "01" + parameters[request_index];
+            }
+            UDSresponse=0;
+            send(request);
+            while(UDSresponse != 1) {
+                Thread.sleep(500); // Delay for 10 milliseconds
+                if(UDSresponse==1) {
+                    break;
+                }
+                Thread.sleep(500); // Delay for 10 milliseconds
+                if(UDSresponse==2) {
+                    send("ATWS");
+                    Thread.sleep(500); // Delay for 10 milliseconds
+                    send("ATE0");
+                    Thread.sleep(500); // Delay for 10 milliseconds
+                    send("ATTP5");
+                    Thread.sleep(500); // Delay for 10 milliseconds
+                }
+                send(request);
+            }
+            request_index++;
+            if(request_index==13)  {
+                request_index=0;
+                Thread.sleep(30); // Delay for 10 milliseconds
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+
+  /*  private void sendParametersWithDelay() {
+        String[] parameters = {
+                "31", "33", "42", "04", "05", "0B", "0C", "0D",
+                "0F", "10", "11", "1F", "21", "23", "2C", "2D"
+        };
+        first_service=1;
+        for (String parameter : parameters) {
+            try {
+                String request = "01" + parameter ;
+                if(parameter=="2D") {
+                    first_service=12;
+                }
+                send(request);
+                Thread.sleep(30); // Delay for 10 milliseconds
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }*/
 
     private void send(String str) {
         if(connected != Connected.True) {
@@ -455,15 +543,21 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         try {
             String msg;
             byte[] data;
+            Charset charset= StandardCharsets.US_ASCII;
             if(hexEnabled) {
                 StringBuilder sb = new StringBuilder();
                 TextUtil.toHexString(sb, TextUtil.fromHexString(str));
                 TextUtil.toHexString(sb, newline.getBytes());
-                msg = sb.toString();
-                data = TextUtil.fromHexString(msg);
+                //msg = sb.toString();
+                //data = TextUtil.fromHexString(msg);
+                reqstr=str;
+                msg = str+"\r";
+                //data = (str + newline).getBytes();
+                data = msg.getBytes(charset);
             } else {
                 msg = str;
-                data = (str + newline).getBytes();
+                //data = (str + newline).getBytes();
+                data = msg.getBytes(charset);
             }
             requireActivity().runOnUiThread(() -> {
                 SpannableStringBuilder spn = new SpannableStringBuilder(msg + '\n');
@@ -594,12 +688,20 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     private void receive(ArrayDeque<byte[]> datas) {
         requireActivity().runOnUiThread(() -> {
 
-            SpannableStringBuilder spn = new SpannableStringBuilder();
+            //SpannableStringBuilder spn = new SpannableStringBuilder();
+            String str="";
+            String req_res="";
 
 
+            Charset charset= StandardCharsets.US_ASCII;
             for (byte[] data : datas) {
                 if (hexEnabled) {
-                    spn.append(TextUtil.toHexString(data)).append('\n');
+                    // spn.append(TextUtil.toHexString(data)).append('\n');
+
+                    str=new String(data,charset);
+
+
+
                 } else {
                     String msg = new String(data);
                     int msgLength = msg.length();
@@ -608,7 +710,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                         if (pendingNewline && msg.charAt(0) == '\n') {
                             int charactersToDelete = 2;
                             if (spn.length() >= charactersToDelete) {
-                                spn.delete(spn.length() - charactersToDelete, spn.length());
+                                //   spn.delete(spn.length() - charactersToDelete, spn.length());
                             } else {
                                 Editable edt = receiveText.getEditableText();
                                 int edtLength = edt != null ? edt.length() : 0;
@@ -621,44 +723,99 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                     }
 
                     if (!pendingNewline) {
-                        spn.append(TextUtil.toCaretString(msg, newline.length() != 0));
+                        // spn.append(TextUtil.toCaretString(msg, newline.length() != 0));
                     }
                 }
             }
 
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyMMddHHmmss");
+            Date currentDate = new Date();
+
+            String dateTime = dateFormat.format(currentDate);
+            long unixTime = convertToUnixTime(dateTime);
+
+            Log.d("Formatted Date Time: ", dateTime);
+            Log.d("Unix Time: ", String.valueOf(unixTime));
 
 
-
-            spn_new.append(spn);
-            count++;
-            Log.e("count", String.valueOf(count));
-            Log.e("Response_spn_logs", String.valueOf(spn_new));
-
-
-            if (spn_new.length() >= 16*24) {
-                Log.e("Response__data_length", String.valueOf(spn_new.length()));
-                String data_new = "$$CLIENT_1NS,862843041050881,1," + lat + "," + lon + "," + dateTimeSt + "," + gnssFixStatusSt + "," + gsmSignalStrengthSt + "," + speedSt + ",583,3," + satellite + "," + hdopSt + ",0,0,12181,2050,12181,3960,10023,21," +
-                        "1|0131:" + spn_new.subSequence(0, 24).toString() + "|0133:" + spn_new.subSequence(24, 48).toString() + "|0142:" + spn_new.subSequence(48, 72) + "|0104:" + spn_new.subSequence(72, 96) + "|0105:" + spn_new.subSequence(96, 120) + "|010B:" + spn_new.subSequence(120, 144) + "" +
-                        "|010C:" + spn_new.subSequence(144, 168) + "|010D:" + spn_new.subSequence(168, 192) + "|010F:" + spn_new.subSequence(192, 216) + "|0110:" + spn_new.subSequence(216, 240) + "|0111:" + spn_new.subSequence(240, 264) + "|011F:" + spn_new.subSequence(264, 288) + "" +
-                        "|0121:" + spn_new.subSequence(288, 312) + "|0123:" + spn_new.subSequence(312, 336) + "|012C:" + spn_new.subSequence(336, 360) + "|012D:" + spn_new.subSequence(360, 384) + "|*66";
-
-                //receiveText.append("Response : ");
-                receiveText.setText(data_new);
-
-                // Sending response to the Client server
-                uploadToFirebase("Response : " + data_new);
-
-                sendMessageToServer(serverAddress, serverPort, data_new);
-                Log.e("Response_data", String.valueOf(data_new));
-                //receiveText.setText(spn_new);
-
-                //responses.clear();
-                spn_new.clear();
-
+            spn= spn+str ;
+            if(str.contains("\r")) {
+                receive_complete=1;
+                Log.e("Response_data", String.valueOf(spn));
             }
+
+
+            //spn_new.append(spn);
+            //count++;
+            // Log.e("count", String.valueOf(count));
+            // Log.e("Response_spn_logs", String.valueOf(spn_new));
+            if(receive_complete==1) {
+                receive_complete=0;
+                if (spn.contains("BUS INIT: ERROR") || spn.contains("DATA ERROR") || spn.contains("STOPPED")) {
+                    UDSresponse=2;
+                } else if (spn.contains("NO")  || spn.contains("BUS ERROR") ) {
+                    // Log.e("Response_data", String.valueOf(spn));
+                    UDSresponse=2;
+                    //sendCommands();
+                } else {
+                    // Log.e("Response_data", String.valueOf(spn));
+                    if (spn.contains("41") || spn.contains("7F") || spn.contains("43") || spn.contains("47") ) {
+                        UDSresponse = 1;
+                        spn= spn.substring(0,spn.length()-1);
+                        if ((request_index == 0 )|| (request_index==12)) {
+                            // first_service = 0;
+                            data_new = "";   //clear the string
+                            String Package_Header = "$$CLIENT_1NS,862843041050881,1," + lat + "," + lon + "," + unixTime + "," + gnssFixStatusSt + "," + gsmSignalStrengthSt + "," + speedSt + ",583,3," + satellite + "," + hdopSt + ",0,0,12181,2050,12181,3960,10023,21,";
+                            req_res = "|" + reqstr + ":" + spn;
+                            data_new = Package_Header + req_res;
+                        } else {
+                            req_res = "|" + reqstr + ":" + spn;
+                            data_new = data_new + req_res;
+                        }
+
+                        if ((request_index == 11) || (request_index == 12)) {
+
+                            data_new = data_new + "|*66";
+
+                            Log.e("Response__data_length", String.valueOf(spn_new.length()));
+
+                          /*  "1|0131:" + spn_new.subSequence(0, 24).toString() + "|0133:" + spn_new.subSequence(24, 48).toString() + "|0142:" + spn_new.subSequence(48, 72) + "|0104:" + spn_new.subSequence(72, 96) + "|0105:" + spn_new.subSequence(96, 120) + "|010B:" + spn_new.subSequence(120, 144) + "" +
+                            "|010C:" + spn_new.subSequence(144, 168) + "|010D:" + spn_new.subSequence(168, 192) + "|010F:" + spn_new.subSequence(192, 216) + "|0110:" + spn_new.subSequence(216, 240) + "|0111:" + spn_new.subSequence(240, 264) + "|011F:" + spn_new.subSequence(264, 288) + "" +
+                            "|0121:" + spn_new.subSequence(288, 312) + "|0123:" + spn_new.subSequence(312, 336) + "|012C:" + spn_new.subSequence(336, 360) + "|012D:" + spn_new.subSequence(360, 384) + "|*66"; */
+                            //receiveText.append("Response : ");
+                            receiveText.setText(data_new);
+
+                            // Sending response to the Client server
+                            uploadToFirebase("Response : " + data_new);
+
+                            sendMessageToServer(serverAddress, serverPort, data_new);
+                            //     Log.e("Response_data", String.valueOf(data_new));
+                            //receiveText.setText(spn_new);
+
+                            //responses.clear();
+                            spn_new.clear();
+
+
+                        }
+                    }
+                }
+                spn="";
+            }
+
         });
     }
 
+    private long convertToUnixTime(String dateTime) {
+        try {
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyMMddHHmmss");
+            Date date = dateFormat.parse(dateTime);
+            long unixTime = date.getTime() / 1000;
+            return unixTime;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return -1;
+        }
+    }
 
 
     void status(String str) {
