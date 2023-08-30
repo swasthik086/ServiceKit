@@ -59,6 +59,7 @@ import java.io.PrintWriter;
 import java.net.Socket;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -727,7 +728,6 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                     }
                 }
             }
-
             SimpleDateFormat dateFormat = new SimpleDateFormat("yyMMddHHmmss");
             Date currentDate = new Date();
 
@@ -737,9 +737,20 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             Log.d("Formatted Date Time: ", dateTime);
             Log.d("Unix Time: ", String.valueOf(unixTime));
 
+           /* SimpleDateFormat dateFormat = new SimpleDateFormat("yyMMddHHmmss", Locale.getDefault());
+            String dateTime = dateFormat.format(new Date());*/
+
+          /*  long epoch;
+            try {
+                epoch = new java.text.SimpleDateFormat("MM/dd/yyyy HH:mm:ss").parse("01/01/1970 01:00:00").getTime() / 1000;
+            } catch (ParseException e) {
+                throw new RuntimeException(e);
+            }
+            String unixTime =String.valueOf(epoch);*/
 
             spn= spn+str ;
             if(str.contains("\r")) {
+
                 receive_complete=1;
                 Log.e("Response_data", String.valueOf(spn));
             }
@@ -762,10 +773,19 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                     if (spn.contains("41") || spn.contains("7F") || spn.contains("43") || spn.contains("47") ) {
                         UDSresponse = 1;
                         spn= spn.substring(0,spn.length()-1);
+                        spn = spn.replaceAll(">", "");
+                        spn= spn.replaceAll("\\s+", "");
+                        if(spn.length() < 16) {
+                            while (spn.length() < 16) {
+                                spn= spn+"0";
+                            }
+                            // spn= spn.padEnd(16-spn.length(),"0");
+                        }
                         if ((request_index == 0 )|| (request_index==12)) {
                             // first_service = 0;
                             data_new = "";   //clear the string
                             String Package_Header = "$$CLIENT_1NS,862843041050881,1," + lat + "," + lon + "," + unixTime + "," + gnssFixStatusSt + "," + gsmSignalStrengthSt + "," + speedSt + ",583,3," + satellite + "," + hdopSt + ",0,0,12181,2050,12181,3960,10023,21,";
+
                             req_res = "|" + reqstr + ":" + spn;
                             data_new = Package_Header + req_res;
                         } else {
@@ -779,10 +799,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
 
                             Log.e("Response__data_length", String.valueOf(spn_new.length()));
 
-                          /*  "1|0131:" + spn_new.subSequence(0, 24).toString() + "|0133:" + spn_new.subSequence(24, 48).toString() + "|0142:" + spn_new.subSequence(48, 72) + "|0104:" + spn_new.subSequence(72, 96) + "|0105:" + spn_new.subSequence(96, 120) + "|010B:" + spn_new.subSequence(120, 144) + "" +
-                            "|010C:" + spn_new.subSequence(144, 168) + "|010D:" + spn_new.subSequence(168, 192) + "|010F:" + spn_new.subSequence(192, 216) + "|0110:" + spn_new.subSequence(216, 240) + "|0111:" + spn_new.subSequence(240, 264) + "|011F:" + spn_new.subSequence(264, 288) + "" +
-                            "|0121:" + spn_new.subSequence(288, 312) + "|0123:" + spn_new.subSequence(312, 336) + "|012C:" + spn_new.subSequence(336, 360) + "|012D:" + spn_new.subSequence(360, 384) + "|*66"; */
-                            //receiveText.append("Response : ");
+
                             receiveText.setText(data_new);
 
                             // Sending response to the Client server
