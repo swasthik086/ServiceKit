@@ -53,7 +53,9 @@ import com.hoho.android.usbserial.driver.UsbSerialDriver;
 import com.hoho.android.usbserial.driver.UsbSerialPort;
 import com.hoho.android.usbserial.driver.UsbSerialProber;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
@@ -63,6 +65,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.Locale;
@@ -70,6 +73,7 @@ import java.util.Objects;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -147,6 +151,31 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
 
     private int receive_complete=0;
 
+    private ExecutorService executorService;
+
+    private int lineCount = 0;
+
+    private boolean newSequence = false;
+
+    private     int buffercount =0;
+
+    private int blockCount = 0;
+    private boolean reset = false;
+
+    private boolean initbuffer = false;
+
+    private boolean lastBlock = false;
+
+    private int chinkslength, chunkSize;
+
+    private int lineNumber = 7685;
+    private int lineNumberAPP1 = 0;
+
+    private  int sequence = 0;
+
+    private String hexString;
+
+
 
     public TerminalFragment() {
 
@@ -198,6 +227,8 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                 }
             };
             handler.postDelayed(locationUpdater, 0);
+
+            executorService = Executors.newSingleThreadExecutor();
 
         }
 
@@ -430,7 +461,8 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     }
 
     private void startPeriodicOperations() {
-        hexEnabled =true;
+        sendCommands();
+      /*  hexEnabled =true;
         timer = new Timer();
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override
@@ -443,16 +475,17 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                     Log.e("PeriodicOperations", "Error in periodic operation: " + e.getMessage());
                 }
             }
-        }, 10, 200); // 10 seconds in milliseconds
+        }, 10, 200); // 10 seconds in milliseconds*/
     }
 
     private void sendCommands() {
-        if (!initializationDone) {
+       /* if (!initializationDone) {
             sendInitializationCommands();
             initializationDone = true;
-        }
+        }*/
 
-        sendIntervalCommands();
+     //   sendIntervalCommands();
+        startWritingHexFileviaBluetoothUpdated();
     }
 
     private void sendInitializationCommands() {
@@ -472,7 +505,8 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     }
 
     private void sendIntervalCommands() {
-        String request="";
+
+       /* String request="";
         String[] parameters = {
                 "33", "42", "04", "05", "0B", "0C", "0D",
                 "0F", "10", "21", "23", "2C","03"
@@ -512,7 +546,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             }
         } catch (InterruptedException e) {
             e.printStackTrace();
-        }
+        }*/
     }
 
 
@@ -536,8 +570,187 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         }
     }*/
 
+    public void startWritingHexFileviaBluetoothUpdated() {
+        executorService.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+
+                    //17-10-2023 Updated
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(context.getAssets().open("V400_48_WOPB_V2.hex")));
+                    String line;
+
+                    StringBuilder dataBuilder = new StringBuilder();
+                    StringBuilder dataBuilderMain = new StringBuilder();
+                    StringBuilder dataBuilderChunk = new StringBuilder();
+                    int skippedLineCount = 0;
+                    boolean incrementSequence = false;
+
+                    int chunkSize = 192;
+
+
+                    StringBuilder hexDataBuilder = new StringBuilder();
+                    boolean firstSequence = false;
+
+                    while ((line = reader.readLine()) != null /*&& !DataRequestManager.resumeBuffer*/) {
+                        lineCount++;
+                        //DataRequestManager.resumeBuffer = true;
+
+                        if(lineCount ==12807 || lineCount ==105583 || lineCount ==113779) {
+                            sequence = 0;
+                        }
+
+                        // Application_0
+                        if (lineCount > lineNumber && lineCount < 12807 ) {   //1ST SEQ-----7820// 1ST APP --12808 //7692      //7805    //7685 to 7692(1)..224, 7699(2)  ,7804(17)
+                            Log.e("datawrite_tlineCount", String.valueOf(lineCount));
+                            // Log.e("datawrite_tlineNumber", String.valueOf(lineNumber));
+                            if (line.length() == 75) {
+
+
+                                String trimmedLine = line.substring(9, line.length() - 2);
+
+                                dataBuilder.append(trimmedLine);  //64 (32*2)
+
+                                dataBuilderMain.append(trimmedLine);
+
+
+
+                                if(lastBlock && lineCount ==12807){  //12807-6=12802  // Application End
+                                    Log.e("datawrite_tl_12802", String.valueOf(lineCount));
+                                    // reset = true;
+                                    lastBlock = false;   ///12806----1st , 12802--00...4 lines
+                                    sequence = 0;
+                                    // hexDataBuilder.append("00").append(dataBuilder);
+                                    hexDataBuilder.append(dataBuilder);
+                                    dataBuilder.setLength(0);
+                                    dataBuilderMain.setLength(0);
+                                }
+
+                                int byteslength = dataBuilder.length()/2;   //224
+
+
+                                if (dataBuilder.length() % (chunkSize*2) == 0) {   //224  //192
+                                    //  if(byteslength % chunkSize == 0){
+                                    Log.e("datawrite_tlen_224", String.valueOf(dataBuilder.length()));
+
+                                    //new code
+                                    //if(newSequence){
+                                    if(sequence==255){
+                                        sequence=0;
+                                    }else  if(sequence<=254) {
+                                        sequence++;
+                                    }
+                                    // sequence++;
+                                    hexString = String.format("%02X", sequence);
+                                    //hexDataBuilder.append("0136").append(hexString).append(dataBuilder);
+                                    hexDataBuilder.append("36").append(hexString).append(dataBuilder);
+                                    //newSequence = false;
+                                    dataBuilder.setLength(0);
+                                    dataBuilderMain.setLength(0);
+
+
+                                    /********* 19-10-23(10:19) *****************/
+
+
+                                    chinkslength = hexDataBuilder.length()/2;
+
+                                    sendChunkToCharacteristic(hexDataBuilder.toString(), chinkslength);
+                                    Log.e("datawrite_tlen_chunks", String.valueOf(hexDataBuilder.length()/2));
+                                    hexDataBuilder.setLength(0);
+
+                                    // Introduce a 100ms delay
+                                    try {
+                                        Thread.sleep(100);
+                                    } catch (InterruptedException e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+
+
+                            } else {
+                                blockCount++;
+                                Log.e("datawrite_tblock", String.valueOf(blockCount));
+                                if (blockCount == 3 || blockCount == 49 || blockCount == 53 || blockCount == 77) {
+                                    // sequence = 1;
+                                    lastBlock = true;
+                                }
+                            }
+                        }
+                    }
+                    reader.close();
+
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+    }
+
+    private void sendChunkToCharacteristic(String chunk, int chunklength) {
+        byte[] dataBytes = convertHexStringToByteArray(chunk);
+        writeLoopToCharacteristic(dataBytes, chunklength);
+    }
+
+    private void writeLoopToCharacteristic(byte[] bytes, int chunklength) {
+        if(chunklength>0) {
+
+
+            Log.e("DataWrite_tchunkWrite", String.valueOf(chunklength));
+
+          /*  if (chunklength == 195) {
+                chunkSize = 195;
+            } else {
+                chunkSize = 193;
+            }*/
+            //  chunkSize = 193;
+            int chunkSize = chunklength;
+
+            final Runnable sendChunkRunnable = new Runnable() {
+                int dataIndex = 0;
+
+                @Override
+                public void run() {
+                    if (dataIndex < bytes.length) {
+                        int length = Math.min(chunkSize, bytes.length - dataIndex);
+                        byte[] chunk = Arrays.copyOfRange(bytes, dataIndex, dataIndex + length);
+
+
+                        if(chunk!=null) {
+                            try {
+                                service.write(chunk);
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }
+
+                        dataIndex += length;
+
+
+                        handler.postDelayed(this, 90);
+                    }
+                }
+            };
+
+            handler.post(sendChunkRunnable);
+
+
+
+        }
+    }
+
+    private byte[] convertHexStringToByteArray(String hexString) {
+        // Converting the hex string to a byte array
+        int len = hexString.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(hexString.charAt(i), 16) << 4)
+                    + Character.digit(hexString.charAt(i + 1), 16));
+        }
+        return data;
+    }
+
     private void send(String str) {
-        if(connected != Connected.True) {
+      /*  if(connected != Connected.True) {
             //Toast.makeText(getActivity(), "not connected", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -566,12 +779,12 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
                 //receiveText.append(spn);
                 //uploadToFirebase("Request : "+String.valueOf(spn));
             });
-            service.write(data);
+            service.write(data);  // write data to USB serial CAN device
         } catch (SerialTimeoutException e) {
             status("write timeout: " + e.getMessage());
         } catch (Exception e) {
             onSerialIoError(e);
-        }
+        }*/
     }
 
     private void uploadToFirebase(String data) {
